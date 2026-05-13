@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Runtime data (user-specific)
+stats.json
+
+# Editor
+.vscode/
+.idea/
