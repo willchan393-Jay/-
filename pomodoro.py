@@ -29,10 +29,26 @@ DEFAULT_CONFIG = {
     "always_on_top": True,
 }
 
+# Catppuccin Mocha palette
+BASE    = "#1e1e2e"
+MANTLE  = "#181825"
+CRUST   = "#11111b"
+SURFACE = "#313244"
+OVERLAY = "#585b70"
+SUBTLE  = "#6c7086"
+TEXT    = "#cdd6f4"
+BLUE    = "#89b4fa"
+GREEN   = "#a6e3a1"
+RED     = "#f38ba8"
+PEACH   = "#fab387"
+YELLOW  = "#f9e2af"
+MAUVE   = "#cba6f7"
+WHITE   = "#ffffff"
+
 STYLES = {
-    PHASE_WORK:        {"fg": "#e74c3c", "bg": "#2c3e50", "label": "专注中", "msg": "专注结束！休息一下吧。"},
-    PHASE_SHORT_BREAK: {"fg": "#2ecc71", "bg": "#2c3e50", "label": "短休息", "msg": "休息结束，开始新的专注！"},
-    PHASE_LONG_BREAK:  {"fg": "#3498db", "bg": "#2c3e50", "label": "长休息", "msg": "专注结束！来一次长休息。"},
+    PHASE_WORK:        {"fg": RED,   "label": "专注中", "msg": "专注结束！休息一下吧。"},
+    PHASE_SHORT_BREAK: {"fg": GREEN, "label": "短休息", "msg": "休息结束，开始新的专注！"},
+    PHASE_LONG_BREAK:  {"fg": BLUE,  "label": "长休息", "msg": "专注结束！来一次长休息。"},
 }
 
 
@@ -175,14 +191,42 @@ class PomodoroApp:
             self.root.after_cancel(self._timer_id)
             self._timer_id = None
 
+    # -- widget builders -----------------------------------------------
+
+    @staticmethod
+    def _frame(parent, bg=None, **kw):
+        return tk.Frame(parent, bg=bg or BASE, **kw)
+
+    @staticmethod
+    def _label(parent, text="", **kw):
+        defaults = {"bg": BASE, "fg": TEXT, "font": ("Helvetica", 10)}
+        defaults.update(kw)
+        return tk.Label(parent, text=text, **defaults)
+
+    def _btn(self, parent, text, color, cmd, width=None):
+        kw = {
+            "text": text, "bg": color, "fg": WHITE,
+            "relief": "flat", "padx": 16, "pady": 8,
+            "font": ("Helvetica", 11, "bold"),
+            "activebackground": color, "activeforeground": WHITE,
+            "cursor": "hand2", "command": cmd,
+        }
+        if width:
+            kw["width"] = width
+        return tk.Button(parent, **kw)
+
+    # -- build UI ------------------------------------------------------
+
     def _build_ui(self):
         root = tk.Tk()
         root.title("番茄钟")
-        root.geometry("340x490")
+        root.geometry("360x520")
         root.resizable(False, False)
+        root.configure(bg=BASE)
         root.attributes("-topmost", self.timer.config["always_on_top"])
         self.root = root
 
+        self._build_header()
         self._build_canvas()
         self._build_stats()
         self._build_buttons()
@@ -191,117 +235,181 @@ class PomodoroApp:
 
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _build_header(self):
+        self._header_bar = tk.Frame(self.root, bg=MANTLE, height=36)
+        self._header_bar.pack(fill=tk.X)
+        self._header_bar.pack_propagate(False)
+
+        self._settings_btn = self._btn(self._header_bar, "⚙", OVERLAY,
+                                       self._toggle_settings, width=3)
+        self._settings_btn.pack(side=tk.RIGHT, padx=(0, 6), pady=3)
+
+        title = tk.Label(self._header_bar, text="🍅 番茄钟",
+                         bg=MANTLE, fg=TEXT,
+                         font=("Helvetica", 12, "bold"))
+        title.pack(side=tk.LEFT, padx=12)
+
     def _build_canvas(self):
         self.canvas = tk.Canvas(self.root, width=240, height=240,
-                                highlightthickness=0)
-        self.canvas.pack(pady=(30, 5))
+                                bg=BASE, highlightthickness=0)
+        self.canvas.pack(pady=(24, 4))
         cx, cy, r = 120, 120, 100
 
+        # outer glow ring
+        self.canvas.create_oval(cx - r - 4, cy - r - 4,
+                                cx + r + 4, cy + r + 4,
+                                outline=OVERLAY, width=1)
+
+        # track ring
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
-                                outline="#34495e", width=4)
+                                outline=SURFACE, width=6)
+
+        # tick marks
         for i in range(60):
             angle = pi / 2 - (i / 60) * 2 * pi
-            inner_r, line_w = (85, 3) if i % 5 == 0 else (90, 1)
+            inner_r, line_w = (86, 3) if i % 5 == 0 else (91, 1)
             self.canvas.create_line(
                 cx + inner_r * cos(angle), cy - inner_r * sin(angle),
                 cx + r * cos(angle),      cy - r * sin(angle),
-                fill="#7f8c8d", width=line_w,
+                fill=SUBTLE if i % 5 == 0 else OVERLAY, width=line_w,
             )
 
+        # progress arc
         self._arc = self.canvas.create_arc(
-            cx - r + 5, cy - r + 5, cx + r - 5, cy + r - 5,
+            cx - r + 3, cy - r + 3, cx + r - 3, cy + r - 3,
             start=90, extent=0, outline="", width=6, style="arc",
         )
+
+        # time text
         self._time_text = self.canvas.create_text(
-            cx, cy + 5, text="25:00",
-            font=("Helvetica", 40, "bold"), fill="white",
+            cx, cy + 6, text="25:00",
+            font=("Helvetica", 42, "bold"), fill=TEXT,
         )
+
+        # phase label
         self._phase_text = self.canvas.create_text(
-            cx, cy - 60, font=("Helvetica", 14), anchor="center",
+            cx, cy - 56, font=("Helvetica", 13), anchor="center",
         )
 
     def _build_stats(self):
-        self._stats_label = tk.Label(self.root, font=("Helvetica", 11), fg="#bdc3c7")
-        self._stats_label.pack(pady=(0, 8))
+        self._stats_label = self._label(self.root, fg=SUBTLE,
+                                        font=("Helvetica", 10))
+        self._stats_label.pack(pady=(4, 2))
+
+        # progress dots
+        self._dots_frame = self._frame(self.root)
+        self._dots_frame.pack(pady=(2, 4))
+        self._dot_labels = []
+
+    def _refresh_dots(self):
+        for w in self._dots_frame.winfo_children():
+            w.destroy()
+        self._dot_labels.clear()
+        goal = self.timer.config["daily_goal"]
+        done = min(self.timer.today_completed, goal)
+        for i in range(goal):
+            color = RED if i < done else SURFACE
+            lbl = tk.Label(self._dots_frame, text="⬤", fg=color, bg=BASE,
+                           font=("Helvetica", 8))
+            lbl.pack(side=tk.LEFT, padx=2)
+            self._dot_labels.append(lbl)
 
     def _build_buttons(self):
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=5)
-        self._btn_start = self._mkbtn(btn_frame, "▶ 开始", "#27ae60", self._on_start)
-        self._btn_start.pack(side=tk.LEFT, padx=4)
-        self._btn_pause = self._mkbtn(btn_frame, "⏸ 暂停", "#f39c12", self._on_pause)
-        self._btn_pause.pack(side=tk.LEFT, padx=4)
-        self._btn_reset = self._mkbtn(btn_frame, "↺ 重置", "#e74c3c", self._on_reset)
-        self._btn_reset.pack(side=tk.LEFT, padx=4)
+        btn_frame = self._frame(self.root)
+        btn_frame.pack(pady=(8, 4))
+
+        self._btn_start  = self._btn(btn_frame, "▶ 开始", GREEN, self._on_start)
+        self._btn_pause  = self._btn(btn_frame, "⏸ 暂停", YELLOW, self._on_pause)
+        self._btn_reset  = self._btn(btn_frame, "↺ 重置", SUBTLE, self._on_reset)
+
+        self._btn_start.pack(side=tk.LEFT, padx=5)
+        self._btn_pause.pack(side=tk.LEFT, padx=5)
+        self._btn_reset.pack(side=tk.LEFT, padx=5)
 
     def _build_phase_toggle(self):
-        toggle_frame = tk.Frame(self.root)
-        toggle_frame.pack(pady=12)
-        tk.Label(toggle_frame, text="模式:", font=("Helvetica", 10),
-                 fg="#bdc3c7").pack(side=tk.LEFT, padx=(0, 8))
+        toggle_frame = self._frame(self.root)
+        toggle_frame.pack(pady=(6, 2))
+
         self._phase_var = tk.StringVar(value=PHASE_WORK)
-        for phase, label in [(PHASE_WORK, "专注"), (PHASE_SHORT_BREAK, "短休"), (PHASE_LONG_BREAK, "长休")]:
-            tk.Radiobutton(toggle_frame, text=label, variable=self._phase_var, value=phase,
-                           command=self._on_phase_change,
-                           fg="#ecf0f1", selectcolor="#34495e",
-                           activebackground="#34495e",
-                           font=("Helvetica", 10)).pack(side=tk.LEFT, padx=4)
+        phases = [(PHASE_WORK, "专注"), (PHASE_SHORT_BREAK, "短休"), (PHASE_LONG_BREAK, "长休")]
+        for i, (val, label) in enumerate(phases):
+            rb = tk.Radiobutton(toggle_frame, text=label, variable=self._phase_var,
+                                value=val, command=self._on_phase_change,
+                                bg=BASE, fg=SUBTLE, selectcolor=BASE,
+                                activebackground=BASE, activeforeground=TEXT,
+                                font=("Helvetica", 11),
+                                indicatoron=False, padx=16, pady=4,
+                                relief="flat", overrelief="flat",
+                                borderwidth=0, highlightthickness=0)
+            rb.pack(side=tk.LEFT, padx=3)
 
     def _build_settings_panel(self):
-        self._settings_frame = tk.Frame(self.root, bg="#34495e")
+        self._settings_frame = self._frame(self.root, bg=MANTLE)
         fields = [
-            ("work_minutes",        "专注 (分钟)", 1, 120),
-            ("short_break_minutes", "短休 (分钟)", 1, 30),
-            ("long_break_minutes",  "长休 (分钟)", 1, 60),
-            ("long_break_interval", "长休间隔 (个)", 1, 10),
-            ("daily_goal",          "每日目标 (个)", 1, 30),
+            ("work_minutes",        "专注时长", 1, 120),
+            ("short_break_minutes", "短休时长", 1, 30),
+            ("long_break_minutes",  "长休时长", 1, 60),
+            ("long_break_interval", "长休间隔", 1, 10),
+            ("daily_goal",          "每日目标", 1, 30),
         ]
         self._settings_entries = {}
         for key, label, lo, hi in fields:
-            f = tk.Frame(self._settings_frame, bg="#34495e")
-            f.pack(fill=tk.X, padx=15, pady=3)
-            tk.Label(f, text=label, bg="#34495e", fg="#ecf0f1",
-                     font=("Helvetica", 10), width=14, anchor="w").pack(side=tk.LEFT)
+            f = self._frame(self._settings_frame, bg=MANTLE)
+            f.pack(fill=tk.X, padx=20, pady=3)
+            self._label(f, text=label, bg=MANTLE,
+                        font=("Helvetica", 10), width=10,
+                        anchor="w").pack(side=tk.LEFT)
             var = tk.StringVar(value=str(self.timer.config[key]))
-            tk.Spinbox(f, from_=lo, to=hi, textvariable=var, width=8,
-                       font=("Helvetica", 10)).pack(side=tk.RIGHT)
+            sb = tk.Spinbox(f, from_=lo, to=hi, textvariable=var, width=6,
+                            bg=SURFACE, fg=TEXT, buttonbackground=SURFACE,
+                            relief="flat", font=("Helvetica", 10))
+            sb.pack(side=tk.RIGHT)
             self._settings_entries[key] = (var, lo, hi)
 
-        tk.Button(self._settings_frame, text="保存设置", bg="#27ae60",
-                  fg="white", relief="flat", padx=20, pady=4,
-                  command=self._save_settings).pack(pady=(10, 5))
+        btn_row = self._frame(self._settings_frame, bg=MANTLE)
+        btn_row.pack(pady=(10, 6))
+
+        self._btn_save = self._btn(btn_row, "✓ 保存", GREEN, self._save_settings)
+        self._btn_save.pack(side=tk.LEFT, padx=4)
 
         self._atop_var = tk.BooleanVar(value=self.timer.config["always_on_top"])
-        tk.Checkbutton(self._settings_frame, text="窗口置顶",
-                       variable=self._atop_var, bg="#34495e", fg="#ecf0f1",
-                       selectcolor="#34495e", activebackground="#34495e",
-                       command=self._toggle_on_top).pack(pady=(0, 10))
+        cb = tk.Checkbutton(btn_row, text="置顶", variable=self._atop_var,
+                            bg=MANTLE, fg=TEXT, selectcolor=MANTLE,
+                            activebackground=MANTLE, activeforeground=TEXT,
+                            font=("Helvetica", 10),
+                            command=self._toggle_on_top)
+        cb.pack(side=tk.LEFT, padx=8)
 
-        self._settings_btn = tk.Button(self.root, text="⚙ 设置", bg="#7f8c8d",
-                                       fg="white", relief="flat", padx=15,
-                                       command=self._toggle_settings)
-        self._settings_btn.pack(pady=(5, 10))
-
-    @staticmethod
-    def _mkbtn(parent, text, color, cmd):
-        return tk.Button(parent, text=text, bg=color, fg="white",
-                         relief="flat", padx=12, pady=6, font=("Helvetica", 11),
-                         activebackground=color, activeforeground="white",
-                         cursor="hand2", command=cmd)
+    # -- sync UI -------------------------------------------------------
 
     def _sync(self):
         timer = self.timer
         style = timer.style
+
         self.canvas.itemconfigure(self._time_text, text=timer.time_str)
-        self.canvas.itemconfigure(self._phase_text, text=style["label"], fill=style["fg"])
-        self.canvas.itemconfigure(self._arc, extent=timer.progress * 360, outline=style["fg"])
-        self.root.configure(bg=style["bg"])
-        self.canvas.configure(bg=style["bg"])
-        self._stats_label.configure(bg=style["bg"], text=self._stats_text())
+        self.canvas.itemconfigure(self._phase_text, text=style["label"],
+                                  fill=style["fg"])
+        self.canvas.itemconfigure(self._arc, extent=timer.progress * 360,
+                                  outline=style["fg"])
+        self._stats_label.configure(text=self._stats_text())
+
+        # update phase radio button colors
+        for child in self.root.winfo_children():
+            self._walk_and_style(child, style["fg"])
+
+    def _walk_and_style(self, widget, phase_fg):
+        if isinstance(widget, tk.Radiobutton) and widget.cget("indicatoron") == "0":
+            if widget.cget("value") == self.timer.phase:
+                widget.configure(bg=phase_fg, fg=BASE)
+            else:
+                widget.configure(bg=SURFACE, fg=SUBTLE)
+        elif isinstance(widget, tk.Frame):
+            for child in widget.winfo_children():
+                self._walk_and_style(child, phase_fg)
 
     def _stats_text(self):
-        timer = self.timer
-        return f"今日已完成: {timer.today_completed} 个番茄  |  目标: {timer.config['daily_goal']} 个"
+        t = self.timer
+        return f"今日完成 {t.today_completed} / {t.config['daily_goal']} 个番茄"
 
     # -- tick loop -----------------------------------------------------
 
@@ -312,6 +420,7 @@ class PomodoroApp:
         self._sync()
         if result != "continue":
             winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+            self._refresh_dots()
             messagebox.showinfo("番茄钟", self.timer.style["msg"])
             self._sync()
         else:
@@ -344,7 +453,7 @@ class PomodoroApp:
         if self._settings_visible:
             self._settings_frame.pack_forget()
         else:
-            self._settings_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+            self._settings_frame.pack(fill=tk.X, padx=0, pady=(6, 0))
         self._settings_visible = not self._settings_visible
 
     def _save_settings(self):
@@ -360,6 +469,7 @@ class PomodoroApp:
         if self.timer.state == STATE_IDLE:
             self.timer.switch_phase(self.timer.phase)
         self._sync()
+        self._refresh_dots()
         messagebox.showinfo("设置", "已保存")
 
     def _toggle_on_top(self):
@@ -372,6 +482,7 @@ class PomodoroApp:
         self.root.destroy()
 
     def run(self):
+        self._refresh_dots()
         self.root.mainloop()
 
 
